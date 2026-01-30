@@ -285,7 +285,7 @@
     THEME = updated_THEME // 更新当前主题
     GitHub_Freshness(updated_THEME)
     Swal.fire({
-      position: 'top-center',
+      position: 'top',
       background: '#4ab96f',
       icon: 'success',
       title: '设置已保存',
@@ -512,145 +512,269 @@
   }
   // === 核心函数 ===
   function GitHub_FreshnessSearchPage(theme = THEME) {
-    const elements = $('.Text__StyledText-sc-17v1xeu-0.hWqAbU')
-    if (elements.length === 0) return console.log('没有找到日期元素')
-    let themeType = getThemeType()
-    elements.each(function () {
-      const title = $(this).attr('title')
-      if (title) {
-        const timeResult = handelTime(title, theme.TIME_BOUNDARY, 'UTC')
-        const BGC_element = $(this).closest(
-          `.Box-sc-g0xbh4-0 .${themeType === 'dark' ? 'iwUbcA' : 'flszRz'}`
-        )
-        // 背景色
-        setElementBGC(BGC_element, theme.BGC, timeResult)
-        // 字体颜色
-        setElementFONT($(this), theme.FONT, timeResult)
-        // 时间格式化
-        if (theme.TIME_FORMAT.isEnabled) {
-          // 解析日期（指定格式和时区）
-          const dt = DateTime.fromFormat(title, "yyyy年M月d日 'GMT'Z HH:mm", {
-            zone: 'UTC',
-          }).setZone('Asia/Shanghai')
+    try {
+      console.log('GitHub_FreshnessSearchPage: Starting execution');
 
-          // 格式化成 YYYY-MM-DD
-          const formattedDate = dt.toFormat('yyyy-MM-dd')
-          $(this).text(formattedDate)
-        }
-      }
-    })
-  }
-  function GitHub_FreshnessAwesome(theme = THEME) {
-    // 选择符合条件的 <a> 标签
-    let elementsToObserve = [];
-    $('.Box-sc-g0xbh4-0.csrIcr a').each(function () {
-      let href = $(this).attr('href');
-      // 只处理符合 href 条件的 <a> 标签
-      if (isValidHref(href)) {
-        elementsToObserve.push(this); // 存储符合条件的元素
-      }
-    });
+      // Function to process elements
+      const processElements = () => {
+        try {
+          // Find all search result items
+          const searchResults = $('div[data-testid="results-list"] > div, div.iCBzoV');
+          console.log('GitHub_FreshnessSearchPage: Found search result items:', searchResults.length);
 
-    // 使用 IntersectionObserver 监听元素是否进入/离开视口
-    const observer = new IntersectionObserver(function (entries, observer) {
-      entries.forEach(el => {
-        const href = $(el.target).attr('href');
-        const apiHref = toAPIUrl(href)
-        if (el.isIntersecting && el.target.getAttribute('request') !== 'true' && apiHref) {
-          $.ajax({
-            url: apiHref, // API 地址
-            method: 'GET', // 请求方式
-            headers: {
-              'Authorization': `token ${AWESOME_TOKEN}` || ''  // 替换为你的个人访问令牌
-            },
-            success: function (data) {
-              const stars = data.stargazers_count; // 获取星标数
-              const time = data.updated_at; // 获取星标数
-              const timeResult = handelTime(time, theme.TIME_BOUNDARY);
-              // 添加标签
-              if (theme.AWESOME.isEnabled && el.target.getAttribute('request') !== 'true') {
-                $(el.target).after(`<span class="stars" style="padding: 8px">★${stars}</span><span class="updated-at">📅${formatDate(time)}</span>`);
-                el.target.setAttribute('request', 'true')
-              }
-              setElementBGC($(el.target), theme.BGC, timeResult)
-              // 字体颜色
-              setElementFONT($(el.target), theme.FONT, timeResult)
-              $(el.target).css('padding', '0 12px')
-            },
-            error: function (err) {
-              if (err.status === 403) {
-                Swal.fire({
-                  position: 'top-center',
-                  icon: 'warning',
-                  title: '检测到AWESOME API 速率限制超出！',
-                  confirmButtonText: '查看详情',
-                  showConfirmButton: true,
-                  background: '#4ab96f',
-                  preConfirm: () => {
-                    window.open("https://home.rational-stars.top/", "_blank")
+          if (searchResults.length === 0) {
+            console.log('GitHub_FreshnessSearchPage: No search results found');
+            return;
+          }
+
+          // Process each search result
+          searchResults.each(function() {
+            try {
+              // Skip if already processed
+              if ($(this).attr('data-gh-freshness-processed') === 'true') return;
+
+              // Look for date elements - GitHub uses different structures
+              // Try relative-time first (older GitHub)
+              let timeElement = $(this).find('relative-time').first();
+              let datetime = null;
+
+              if (timeElement.length > 0) {
+                datetime = timeElement.attr('datetime');
+              } else {
+                // Try new GitHub structure with title attribute
+                const truncateDiv = $(this).find('div.prc-Truncate-Truncate-2G1eo[title], span[title]').filter(function() {
+                  const title = $(this).attr('title');
+                  // Check if title looks like a date (contains numbers and commas)
+                  return title && /\d{1,2},\s*\d{4}/.test(title);
+                });
+
+                if (truncateDiv.length > 0) {
+                  const title = truncateDiv.first().attr('title');
+                  console.log('GitHub_FreshnessSearchPage: Found date in title:', title);
+                  // Convert title to ISO format for parsing
+                  // Title format: "Jan 30, 2026, 12:10 PM UTC"
+                  try {
+                    const parsedDate = new Date(title);
+                    if (!isNaN(parsedDate.getTime())) {
+                      datetime = parsedDate.toISOString();
+                      timeElement = truncateDiv.first();
+                    }
+                  } catch (parseError) {
+                    console.error('GitHub_FreshnessSearchPage: Error parsing date:', parseError);
                   }
-                })
+                }
               }
+
+              if (!datetime) {
+                console.log('GitHub_FreshnessSearchPage: No datetime found for this result');
+                return;
+              }
+
+              console.log('GitHub_FreshnessSearchPage: Processing datetime:', datetime);
+
+              // Calculate if within time boundary
+              const timeResult = handelTime(datetime, theme.TIME_BOUNDARY);
+              console.log('GitHub_FreshnessSearchPage: Time result:', timeResult);
+
+              // Apply background color to the search result container
+              setElementBGC($(this), theme.BGC, timeResult);
+              console.log('GitHub_FreshnessSearchPage: Applied background color');
+
+              // Apply font color to the time element's parent
+              if (timeElement && timeElement.length > 0) {
+                const fontElement = timeElement.parent();
+                setElementFONT(fontElement, theme.FONT, timeResult);
+              }
+
+              // Format time if enabled
+              if (theme.TIME_FORMAT.isEnabled && timeElement && timeElement.length > 0) {
+                const dt = DateTime.fromISO(datetime).setZone('Asia/Shanghai');
+                if (dt && dt.isValid) {
+                  const formattedDate = dt.toFormat('yyyy-MM-dd');
+                  const currentText = timeElement.text();
+                  if (!currentText.includes(formattedDate)) {
+                    timeElement.text(formattedDate);
+                  }
+                }
+              }
+
+              // Mark as processed
+              $(this).attr('data-gh-freshness-processed', 'true');
+            } catch (itemError) {
+              console.error('GitHub_FreshnessSearchPage: Error processing item:', itemError);
             }
           });
 
-        } else {
-          // console.log('元素离开视口:', href);
+          console.log('GitHub_FreshnessSearchPage: Processing complete');
+        } catch (innerError) {
+          console.error('GitHub_FreshnessSearchPage: Error in processElements', innerError);
         }
-      });
-    }, { threshold: 0.5 }); // 当元素至少 50% 进入视口时触发回调
-    // 开始监听所有符合条件的元素
-    elementsToObserve.forEach(function (el) {
-      observer.observe(el);
-    });
+      };
 
+      // Run immediately
+      processElements();
+
+      // Set up a MutationObserver to handle dynamic loading (React)
+      const observerCallback = debounce(() => {
+        console.log('GitHub_FreshnessSearchPage: DOM changed, reprocessing...');
+        processElements();
+      }, 300);
+
+      const observer = new MutationObserver(observerCallback);
+
+      // Observe the main body for changes
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      console.log('GitHub_FreshnessSearchPage: Observer set up successfully');
+
+    } catch (e) {
+      console.error("GitHub_FreshnessSearchPage: Fatal Error", e);
+    }
+  }
+  function GitHub_FreshnessAwesome(theme = THEME) {
+    try {
+        // 选择符合条件的 <a> 标签
+        let elementsToObserve = [];
+        $('.markdown-body a').each(function () {
+          let href = $(this).attr('href');
+          // 只处理符合 href 条件的 <a> 标签
+          if (isValidHref(href)) {
+            elementsToObserve.push(this); // 存储符合条件的元素
+          }
+        });
+
+        // 使用 IntersectionObserver 监听元素是否进入/离开视口
+        const observer = new IntersectionObserver(function (entries, observer) {
+          try {
+              entries.forEach(el => {
+                const href = $(el.target).attr('href');
+                const apiHref = toAPIUrl(href)
+                if (el.isIntersecting && el.target.getAttribute('request') !== 'true' && apiHref) {
+                  $.ajax({
+                    url: apiHref, // API 地址
+                    method: 'GET', // 请求方式
+                    headers: {
+                      'Authorization': `token ${AWESOME_TOKEN}` || ''  // 替换为你的个人访问令牌
+                    },
+                    success: function (data) {
+                      try {
+                          const stars = data.stargazers_count; // 获取星标数
+                          const time = data.updated_at; // 获取星标数
+                          const timeResult = handelTime(time, theme.TIME_BOUNDARY);
+                          // 添加标签
+                          if (theme.AWESOME.isEnabled && el.target.getAttribute('request') !== 'true') {
+                            $(el.target).after(`<span class="stars" style="padding: 8px">★${stars}</span><span class="updated-at">📅${formatDate(time)}</span>`);
+                            el.target.setAttribute('request', 'true')
+                          }
+                          setElementBGC($(el.target), theme.BGC, timeResult)
+                          // 字体颜色
+                          setElementFONT($(el.target), theme.FONT, timeResult)
+                          $(el.target).css('padding', '0 12px')
+                      } catch (successErr) {
+                          console.error("Error in Awesome success callback:", successErr);
+                      }
+                    },
+                    error: function (err) {
+                      if (err.status === 403) {
+                        Swal.fire({
+                          position: 'top',
+                          icon: 'warning',
+                          title: '检测到AWESOME API 速率限制超出！',
+                          confirmButtonText: '查看详情',
+                          showConfirmButton: true,
+                          background: '#4ab96f',
+                          preConfirm: () => {
+                            window.open("https://home.rational-stars.top/", "_blank")
+                          }
+                        })
+                      } else {
+                          console.error("Awesome API Error:", err);
+                      }
+                    }
+                  });
+
+                } else {
+                  // console.log('元素离开视口:', href);
+                }
+              });
+          } catch (obsErr) {
+              console.error("Error in IntersectionObserver callback:", obsErr);
+          }
+        }, { threshold: 0.5 }); // 当元素至少 50% 进入视口时触发回调
+        // 开始监听所有符合条件的元素
+        elementsToObserve.forEach(function (el) {
+          observer.observe(el);
+        });
+    } catch (e) {
+        console.error("GitHub_FreshnessAwesome: Fatal Error", e);
+    }
   }
   function GitHub_Freshness(theme = THEME) {
-    const matchUrl = isMatchedUrl()
-    if (!matchUrl) return
-    if (matchUrl === 'matchSearchPage') return GitHub_FreshnessSearchPage(theme)
-    const elements = $('.sc-aXZVg')
-    if (elements.length === 0) return console.log('没有找到日期元素');
-    console.log("向前🇨🇳 ====> GitHub_Freshness ====> elements:", elements.length)
+    try {
+        const matchUrl = isMatchedUrl()
+        if (!matchUrl) return
+        if (matchUrl === 'matchSearchPage') return GitHub_FreshnessSearchPage(theme)
+        const elements = $('relative-time')
+        if (elements.length === 0) return console.log('没有找到日期元素');
+        console.log("向前🇨🇳 ====> GitHub_Freshness ====> elements:", elements.length)
 
-    let trRows = []
-    elements.each(function () {
-      const datetime = $(this).attr('datetime')
-      if (datetime) {
-        const timeResult = handelTime(datetime, theme.TIME_BOUNDARY)
-        const trElement = $(this).closest('tr.react-directory-row')
-        trRows.push(trElement[0])
-        // 背景颜色和字体
-        const BGC_element = $(this).closest('td')
-        // 在 tr 元素中查找 SVG 元素
-        const DIR_element = trElement.find('.icon-directory')
-        const FILE_element = trElement.find('.color-fg-muted')
-        // 背景色
-        setElementBGC(BGC_element, theme.BGC, timeResult)
-        // 文件夹颜色和文件图标
-        setElementDIR(DIR_element, theme.DIR, timeResult)
-        setElementDIR(FILE_element, theme.DIR, timeResult)
-        // 时间格式化
-        setElementTIME_FORMAT($(this), theme.TIME_FORMAT, datetime)
-        // 字体颜色
-        setElementFONT($(this).parent(), theme.FONT, timeResult)
-      }
-    })
-    // 文件排序
-    if (theme.SORT.isEnabled) {
-      // 将 tr 元素按日期排序
-      trRows.sort((a, b) => {
-        // 获取 datetime 属性
-        let dateA = new Date(a.querySelector('relative-time').getAttribute('datetime'));
-        let dateB = new Date(b.querySelector('relative-time').getAttribute('datetime'));
-        // 根据 isAscending 变量控制排序顺序
-        return theme.SORT.select === 'asc' ? dateA - dateB : dateB - dateA;
-      });
-      $('.Box-sc-g0xbh4-0.fdROMU tbody').append(trRows);
-    }
+        let trRows = []
+        let listContainer = null
 
-    if (theme.AWESOME.isEnabled && $('#repo-title-component a').text().toLowerCase().includes('awesome')) {
-      GitHub_FreshnessAwesome()
+        elements.each(function () {
+          try {
+              const datetime = $(this).attr('datetime')
+              if (datetime) {
+                const timeResult = handelTime(datetime, theme.TIME_BOUNDARY)
+                const trElement = $(this).closest('tr, div[role="row"]')
+                
+                if (trElement.length === 0) return
+
+                trRows.push(trElement[0])
+                if (!listContainer) listContainer = trElement.parent()
+
+                // 背景颜色和字体
+                const BGC_element = $(this).closest('td, div[role="gridcell"]')
+                // 在 tr 元素中查找 SVG 元素
+                const DIR_element = trElement.find('.icon-directory, svg[aria-label="Directory"]')
+                const FILE_element = trElement.find('.color-fg-muted, svg') // Attempt to find file icons
+                
+                // 背景色
+                setElementBGC(BGC_element, theme.BGC, timeResult)
+                // 文件夹颜色和文件图标
+                setElementDIR(DIR_element, theme.DIR, timeResult)
+                setElementDIR(FILE_element, theme.DIR, timeResult)
+                // 时间格式化
+                setElementTIME_FORMAT($(this), theme.TIME_FORMAT, datetime)
+                // 字体颜色
+                setElementFONT($(this).parent(), theme.FONT, timeResult)
+              }
+          } catch (itemError) {
+              console.error('Error processing item in GitHub_Freshness:', itemError, this);
+          }
+        })
+        // 文件排序
+        if (theme.SORT.isEnabled && listContainer && trRows.length > 0) {
+          // 将 tr 元素按日期排序
+          trRows.sort((a, b) => {
+            // 获取 datetime 属性
+            const t1 = a.querySelector('relative-time');
+            const t2 = b.querySelector('relative-time');
+            if (!t1 || !t2) return 0;
+
+            let dateA = new Date(t1.getAttribute('datetime'));
+            let dateB = new Date(t2.getAttribute('datetime'));
+            // 根据 isAscending 变量控制排序顺序
+            return theme.SORT.select === 'asc' ? dateA - dateB : dateB - dateA;
+          });
+          listContainer.append(trRows);
+        }
+
+        if (theme.AWESOME.isEnabled && $('strong[itemprop="name"] a').text().toLowerCase().includes('awesome')) {
+          GitHub_FreshnessAwesome()
+        }
+    } catch (e) {
+        console.error("GitHub_Freshness: Fatal Error", e);
     }
   }
   function formatDate(isoDateString) {
@@ -661,7 +785,7 @@
 
     // 判断是否符合 @match 的 URL 模式
     const matchRepoPage =
-      /^https:\/\/github\.com\/[^/]+\/[^/]+(?:\?.*)?$|^https:\/\/github\.com\/[^/]+\/[^/]+\/tree\/.+$/.test(
+      /^https:\/\/github\.com\/[^/]+\/[^/]+(?:\?.*)?(?:#.*)?$|^https:\/\/github\.com\/[^/]+\/[^/]+\/tree\/.+$/.test(
         currentUrl
       )
     // 判断是否符合 @match 的 URL 模式
@@ -707,7 +831,15 @@ document.addEventListener('visibilitychange', () => {
 // 监听 pjax:end 事件，确保页面内容完全加载
 document.addEventListener('pjax:end', () => {
   console.log('GitHub PJAX 跳转，页面内容已加载');
-  runScript();  // 页面内容加载完成后执行 GitHub_Freshness
+  runScript();
+});
+document.addEventListener('turbo:load', () => {
+  console.log('GitHub Turbo Load 跳转，页面内容已加载');
+  runScript();
+});
+document.addEventListener('turbo:render', () => {
+  console.log('GitHub Turbo Render 跳转，页面内容已加载');
+  runScript();
 });
 
 // 重写 history.pushState 和 history.replaceState 来处理 URL 变化
