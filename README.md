@@ -1,3 +1,7 @@
+fix most functions with claude code!
+
+
+
 # 目录
 
 1. [预览效果图](#预览效果图)
